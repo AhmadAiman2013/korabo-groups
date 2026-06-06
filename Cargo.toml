@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "packages/korabo-group-handler",
+    "packages/korabo-group-members-handler",
+    "packages/group-core",
+]
+resolver = "2"

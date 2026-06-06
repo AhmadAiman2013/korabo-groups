@@ -1,0 +1,18 @@
+[package]
+name = "korabo-group-handler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+lambda_http = "1.2.1"
+tokio = { version = "1.52.3", features = ["macros"] }
+jwt = { git = "https://github.com/AhmadAiman2013/korabo-common.git", tag = "0.9.0" }
+axum = "0.8.9"
+serde_json = "1.0.150"
+aws-sdk-dynamodb = "1.114.0"
+aws-config = "1.8.18"
+tower-http = { version = "0.6.11", features = ["cors"] }
+group-core = { path = "../group-core" }
+uuid = { version = "1.23.2", features = ["v4"] }
+chrono = "0.4.45"
+base64 = "0.22.1"
