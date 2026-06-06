@@ -61,7 +61,7 @@ async fn main() -> Result<(), Error> {
             Router::new()
                 .route("/health", get(health_check))
                 .route("/groups", post(create_group).get(list_groups))
-                .route("/groups/:group_id", get(get_group))
+                .route("/groups/{group_id}", get(get_group))
                 .route("/users/me", get(my_groups))
                 .with_state(state),
         )
