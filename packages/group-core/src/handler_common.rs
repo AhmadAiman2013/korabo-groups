@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use crate::GroupsRepository;
 use axum::Json;
 use jwt::JwtPublicKey;
-use serde_json::{json, Value};
-use crate::GroupsRepository;
+use serde_json::{Value, json};
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,4 +25,3 @@ pub async fn health_check() -> Json<Value> {
         false => Json(json!({ "status": "unhealthy" })),
     }
 }
-

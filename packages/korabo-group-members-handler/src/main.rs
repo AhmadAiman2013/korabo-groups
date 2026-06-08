@@ -1,6 +1,8 @@
 mod members_handler;
 
-use crate::members_handler::{approve_member, join_group, leave_group, list_members, remove_member};
+use crate::members_handler::{
+    approve_member, join_group, leave_group, list_members, remove_member,
+};
 use aws_config::BehaviorVersion;
 use aws_sdk_dynamodb::Client;
 use axum::Router;
@@ -61,8 +63,14 @@ async fn main() -> Result<(), Error> {
                 .route("/{group_id}/join", post(join_group))
                 .route("/{group_id}/leave", delete(leave_group))
                 .route("/{group_id}/members", get(list_members))
-                .route("/{group_id}/members/{user_id}/approve", post(approve_member))
-                .route("/{group_id}/members/{user_id}/remove", delete(remove_member))
+                .route(
+                    "/{group_id}/members/{user_id}/approve",
+                    post(approve_member),
+                )
+                .route(
+                    "/{group_id}/members/{user_id}/remove",
+                    delete(remove_member),
+                )
                 .with_state(state),
         )
         .layer(cors);

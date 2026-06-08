@@ -58,6 +58,6 @@ jobs:
       - name: Build and deploy lambda
         run: |
           cargo lambda build --release
-          cargo lambda deploy korabo-group-members-handler
+          cargo lambda deploy --binary-name korabo-group-members-handler korabo-groups-members-handler
         
         

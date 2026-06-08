@@ -153,26 +153,41 @@ pub async fn remove_member(
     AuthClaims(claims): AuthClaims,
     Path((group_id, user_id)): Path<(String, String)>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    let requester = state.repo.get_member(&state.members_table, &group_id, &claims.sub).await?;
-    
+    let requester = state
+        .repo
+        .get_member(&state.members_table, &group_id, &claims.sub)
+        .await?;
+
     if !matches!(requester.role, Owner) && claims.sub != user_id {
         return Err(AppError::Forbidden);
     }
-    
-    let target = state.repo.get_member(&state.members_table, &group_id, &user_id).await?;
-    
+
+    let target = state
+        .repo
+        .get_member(&state.members_table, &group_id, &user_id)
+        .await?;
+
     if matches!(&target.role, &Owner) {
         return Err(AppError::BadRequest(
             "Cannot remove the group owner. Please transfer ownership or delete the group."
                 .to_string(),
         ));
     }
-    
-    state.repo.delete_member(&state.members_table, &group_id, &user_id).await?;
-    
+
+    state
+        .repo
+        .delete_member(&state.members_table, &group_id, &user_id)
+        .await?;
+
     if matches!(&target.status, &Active) {
-        state.repo.update_member_count(&state.groups_table, &group_id, -1).await?;
+        state
+            .repo
+            .update_member_count(&state.groups_table, &group_id, -1)
+            .await?;
     }
-    
-    Ok((StatusCode::OK, Json(json!({"message": "Successfully removed the group." }))))
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({"message": "Successfully removed the group." })),
+    ))
 }
