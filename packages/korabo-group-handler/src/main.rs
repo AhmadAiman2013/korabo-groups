@@ -1,7 +1,7 @@
 mod group_handler;
 
 use crate::group_handler::{
-    AppState, create_group, get_group, health_check, list_groups, my_groups,
+    create_group, get_group, list_groups, my_groups,
 };
 use aws_config::BehaviorVersion;
 use aws_sdk_dynamodb::Client;
@@ -9,7 +9,7 @@ use axum::Router;
 use axum::http::Method;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::routing::{get, post};
-use group_core::GroupsRepository;
+use group_core::{AppState, GroupsRepository, health_check};
 use jwt::JwtPublicKey;
 use lambda_http::{Error, run, tracing};
 use std::env::var;

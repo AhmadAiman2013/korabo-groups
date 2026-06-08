@@ -5,37 +5,13 @@ use axum::http::StatusCode;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use group_core::{
-    AppError, CreateGroupRequest, GroupMember, GroupsRepository, ListGroupsQuery, RoleType,
-    StatusType, StudyGroup,
+    AppError, AppState, CreateGroupRequest, GroupMember, ListGroupsQuery, RoleType, StatusType,
+    StudyGroup,
 };
-use jwt::{AuthClaims, JwtPublicKey};
+use jwt::AuthClaims;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
 use uuid::Uuid;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub repo: Arc<GroupsRepository>,
-    pub groups_table: String,
-    pub members_table: String,
-    pub jwt: JwtPublicKey,
-}
-
-impl AsRef<JwtPublicKey> for AppState {
-    fn as_ref(&self) -> &JwtPublicKey {
-        &self.jwt
-    }
-}
-
-// GET /groups/health
-pub async fn health_check() -> Json<Value> {
-    let health = true;
-    match health {
-        true => Json(json!({ "status": "healthy" })),
-        false => Json(json!({ "status": "unhealthy" })),
-    }
-}
 
 // POST /group/groups
 

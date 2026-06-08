@@ -162,10 +162,11 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-dynamodb"
-version = "1.114.0"
+version = "1.115.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af371ac7d45e005e4e944738d2744cdcef86c0662f38d6f9df3ba69826ab6e62"
+checksum = "715fd8729709daa491b2d4aeed33e576d76031c164ad34b65062ea585d97ad5e"
 dependencies = [
+ "arc-swap",
  "aws-credential-types",
  "aws-runtime",
  "aws-smithy-async",
@@ -1010,6 +1011,7 @@ dependencies = [
  "aws-sdk-dynamodb",
  "axum",
  "http 1.4.1",
+ "jwt",
  "lambda_http",
  "serde",
  "serde_dynamo",
@@ -1508,6 +1510,18 @@ dependencies = [
 [[package]]
 name = "korabo-group-members-handler"
 version = "0.1.0"
+dependencies = [
+ "aws-config",
+ "aws-sdk-dynamodb",
+ "axum",
+ "chrono",
+ "group-core",
+ "jwt",
+ "lambda_http",
+ "serde_json",
+ "tokio",
+ "tower-http",
+]
 
 [[package]]
 name = "lambda_http"

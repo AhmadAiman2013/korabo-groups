@@ -1,0 +1,63 @@
+name: korabo-group-members-handler.yml
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - packages/korabo-group-members-handler/**
+      - packages/group-core/**
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/korabo-group-members-handler
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.0.0
+        with:
+          aws-region: ap-southeast-1
+          role-session-name: LambdaDeploymentSession
+          role-to-assume: arn:aws:iam::975050100357:role/lambda_deployer
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          profile: minimal
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ${{ github.workspace }}/target/
+          key: ${{ runner.os }}-cargo-group-members-handler-${{ hashFiles('packages/korabo-group-members-handler/Cargo.toml', 'packages/group-core/Cargo.toml', 'Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-group-members-handler-
+
+      - name: Install cargo-lambda (if not cached)
+        run: |
+          if ! command -v cargo-lambda &> /dev/null; then
+          pip install cargo-lambda
+          fi
+
+      - name: Build and deploy lambda
+        run: |
+          cargo lambda build --release
+          cargo lambda deploy korabo-group-members-handler
+        
+        

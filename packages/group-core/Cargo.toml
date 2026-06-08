@@ -12,3 +12,4 @@ thiserror = "2.0.18"
 serde_dynamo = { version = "4.3.0" , features = ["aws-sdk-dynamodb+1"]}
 aws-sdk-dynamodb = "1.114.0"
 lambda_http = "1.2.1"
+jwt = { git = "https://github.com/AhmadAiman2013/korabo-common.git", tag = "0.9.0" }

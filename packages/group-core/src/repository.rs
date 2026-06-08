@@ -164,7 +164,7 @@ impl GroupsRepository {
         table: &str,
         group_id: &str,
         user_id: &str,
-    ) -> Result<Option<GroupMember>, DynamoDBError> {
+    ) -> Result<GroupMember, DynamoDBError> {
         let resp = self
             .client
             .get_item()
@@ -176,8 +176,11 @@ impl GroupsRepository {
             .map_err(|e| e.into_service_error())?;
 
         match resp.item {
-            None => Ok(None),
-            Some(item) => Ok(Some(from_item(item)?)),
+            None => Err(DynamoDBError::NotFound(format!(
+                "Membership for user {} in group {} not found",
+                user_id, group_id
+            ))),
+            Some(item) => Ok(from_item(item)?),
         }
     }
 
