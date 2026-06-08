@@ -150,7 +150,7 @@ impl GroupsRepository {
             .key("PK", group_pk(group_id))
             .key("SK", metadata_sk())
             .update_expression("SET member_count = member_count + :d")
-            .expression_attribute_values(":d", AttributeValue::S(delta.to_string()))
+            .expression_attribute_values(":d", AttributeValue::N(delta.to_string()))
             .send()
             .await
             .map_err(|e| e.into_service_error())?;
@@ -299,6 +299,7 @@ impl GroupsRepository {
             .index_name("user_id-index")
             .key_condition_expression("user_id = :uid")
             .filter_expression("#s = :active")
+            .expression_attribute_names("#s", "status")
             .expression_attribute_values(":uid", AttributeValue::S(user_id.to_string()))
             .expression_attribute_values(":active", AttributeValue::S("active".into()))
             .send()
