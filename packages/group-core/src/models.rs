@@ -48,7 +48,6 @@ pub struct GroupMember {
     pub joined_at: String,
 }
 
-
 #[derive(Debug, Deserialize)]
 pub struct CreateGroupRequest {
     pub name: String,
@@ -64,4 +63,33 @@ pub struct ListGroupsQuery {
     pub subject: Option<String>,
     pub limit: Option<i32>,
     pub cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransferOwnershipQuery {
+    pub new_owner_id: String,
+}
+
+//  ------- SQS Model -----
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "event_type")]
+pub enum GroupEvent {
+    JoinGroup {
+        member: GroupMember,
+        group_id: String,
+        count_delta: i64,
+    },
+    LeaveGroup {
+        group_id: String,
+        user_id: String,
+        was_active: bool,
+    },
+    ApproveMember {
+        group_id: String,
+    },
+    RemoveMember {
+        group_id: String,
+        user_id: String,
+        was_active: bool,
+    },
 }

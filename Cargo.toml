@@ -2,6 +2,7 @@
 members = [
     "packages/korabo-group-handler",
     "packages/korabo-group-members-handler",
+    "packages/korabo-group-worker",
     "packages/group-core",
 ]
 resolver = "2"

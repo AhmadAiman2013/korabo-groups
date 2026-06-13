@@ -76,7 +76,8 @@ impl GroupsRepository {
         limit: i32,
         cursor: Option<HashMap<String, AttributeValue>>,
     ) -> Result<(Vec<StudyGroup>, Option<HashMap<String, AttributeValue>>), DynamoDBError> {
-        let mut req = self.client
+        let mut req = self
+            .client
             .query()
             .table_name(table)
             .index_name("entity_type-index")
@@ -88,9 +89,7 @@ impl GroupsRepository {
             req = req.set_exclusive_start_key(Some(start_key));
         }
 
-        let resp = req.send()
-            .await
-            .map_err(|e| e.into_service_error())?;
+        let resp = req.send().await.map_err(|e| e.into_service_error())?;
 
         let next_cursor = resp.last_evaluated_key().cloned();
 
@@ -124,9 +123,7 @@ impl GroupsRepository {
             req = req.set_exclusive_start_key(Some(start_key));
         }
 
-        let resp = req.send()
-            .await
-            .map_err(|e| e.into_service_error())?;
+        let resp = req.send().await.map_err(|e| e.into_service_error())?;
 
         let next_cursor = resp.last_evaluated_key().cloned();
         let groups = resp
@@ -355,5 +352,62 @@ impl GroupsRepository {
             Some(g) => Ok(g),
             None => Ok(vec![]),
         }
+    }
+
+    pub async fn transfer_ownership(
+        &self,
+        table: &str,
+        group_id: &str,
+        current_owner_id: &str,
+        new_owner_id: &str,
+    ) -> Result<(), DynamoDBError> {
+        self.client
+            .update_item()
+            .table_name(table)
+            .key("PK", group_pk(group_id))
+            .key("SK", metadata_sk())
+            .update_expression("SET owner_id = :new_owner")
+            .condition_expression("owner_id = :current_owner")
+            .expression_attribute_values(":new_owner", AttributeValue::S(new_owner_id.to_string()))
+            .expression_attribute_values(
+                ":current_owner",
+                AttributeValue::S(current_owner_id.to_string()),
+            )
+            .send()
+            .await
+            .map_err(|e| e.into_service_error())?;
+        Ok(())
+    }
+
+    pub async fn query_owner_count(
+        &self,
+        table: &str,
+        owner_id: &str,
+    ) -> Result<i64, DynamoDBError> {
+        let mut count: i64 = 0;
+        let mut last_evaluated_key = None;
+
+        loop {
+            let resp = self
+                .client
+                .query()
+                .table_name(table)
+                .index_name("owner_id-index")
+                .key_condition_expression("owner_id = :owner_id")
+                .expression_attribute_values(":owner_id", AttributeValue::S(owner_id.to_string()))
+                .select(aws_sdk_dynamodb::types::Select::Count)
+                .set_exclusive_start_key(last_evaluated_key)
+                .send()
+                .await
+                .map_err(|e| e.into_service_error())?;
+
+            count += resp.count as i64;
+
+            if resp.last_evaluated_key.is_none() {
+                break;
+            }
+            last_evaluated_key = resp.last_evaluated_key().cloned();
+        }
+        Ok(count)
     }
 }

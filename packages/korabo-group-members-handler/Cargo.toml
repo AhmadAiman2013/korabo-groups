@@ -14,3 +14,5 @@ aws-config = "1.8.18"
 tower-http = { version = "0.6.11", features = ["cors"] }
 group-core = { path = "../group-core" }
 chrono = "0.4.45"
+aws-sdk-sqs = "1.102.0"
+aws-sdk-ssm = "1.113.0"

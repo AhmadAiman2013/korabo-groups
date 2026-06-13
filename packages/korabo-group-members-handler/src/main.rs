@@ -1,7 +1,8 @@
 mod members_handler;
 
 use crate::members_handler::{
-    approve_member, join_group, leave_group, list_members, remove_member,
+    AppState, approve_member, join_group, leave_group, list_members, remove_member,
+    transfer_ownership,
 };
 use aws_config::BehaviorVersion;
 use aws_sdk_dynamodb::Client;
@@ -9,7 +10,7 @@ use axum::Router;
 use axum::http::Method;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::routing::{delete, get, post};
-use group_core::{AppState, GroupsRepository, health_check};
+use group_core::{AppState as baseAppState, GroupsRepository, get_parameter, health_check};
 use jwt::JwtPublicKey;
 use lambda_http::{Error, run, tracing};
 use std::env::var;
@@ -27,6 +28,12 @@ async fn main() -> Result<(), Error> {
     .expect("Failed to load JWKS");
 
     let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+
+    let ssm_client = aws_sdk_ssm::Client::new(&config);
+    let queue_url = get_parameter(&ssm_client, "/korabo/prod/sqs/group").await?;
+
+    let sqs = aws_sdk_sqs::Client::new(&config);
+
     let dynamo = Client::new(&config);
     let groups_table = String::from("korabo_study_groups");
     let members_table = String::from("korabo_group_members");
@@ -48,11 +55,17 @@ async fn main() -> Result<(), Error> {
         ])
         .allow_headers([CONTENT_TYPE, AUTHORIZATION]);
 
-    let state = AppState {
+    let base = baseAppState {
         repo,
         groups_table,
         members_table,
         jwt,
+    };
+
+    let state = AppState {
+        base,
+        queue_url,
+        sqs,
     };
 
     let app = Router::new()
@@ -70,6 +83,10 @@ async fn main() -> Result<(), Error> {
                 .route(
                     "/{group_id}/members/{user_id}/remove",
                     delete(remove_member),
+                )
+                .route(
+                    "/{group_id}/members/{user_id}/transfer-ownership",
+                    post(transfer_ownership),
                 )
                 .with_state(state),
         )

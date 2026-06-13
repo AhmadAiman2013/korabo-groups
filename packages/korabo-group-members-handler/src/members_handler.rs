@@ -1,12 +1,54 @@
+use aws_sdk_sqs::Client;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chrono::Utc;
 use group_core::RoleType::{Member, Owner};
+use group_core::SqsError;
 use group_core::StatusType::{Active, Pending};
-use group_core::{AppError, AppState, GroupMember, GroupType};
+use group_core::{
+    AppError, AppState as baseAppState, GroupEvent, GroupMember, GroupType, TransferOwnershipQuery,
+};
 use jwt::AuthClaims;
+use jwt::JwtPublicKey;
 use serde_json::{Value, json};
+use std::ops::Deref;
+
+#[derive(Clone)]
+pub struct AppState {
+    pub base: baseAppState,
+    pub queue_url: String,
+    pub sqs: Client,
+}
+
+impl Deref for AppState {
+    type Target = baseAppState;
+
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
+
+impl AsRef<JwtPublicKey> for AppState {
+    fn as_ref(&self) -> &JwtPublicKey {
+        self.base.as_ref()
+    }
+}
+
+impl AppState {
+    async fn publish_sqs_event(&self, event: &GroupEvent) -> Result<(), AppError> {
+        let body = serde_json::to_string(event)?;
+
+        self.sqs
+            .send_message()
+            .queue_url(&self.queue_url)
+            .message_body(body)
+            .send()
+            .await
+            .map_err(SqsError::SendMessageError)?;
+        Ok(())
+    }
+}
 
 // POST /members/{group_id}/join
 pub async fn join_group(
@@ -45,14 +87,13 @@ pub async fn join_group(
         joined_at: Utc::now().to_rfc3339(),
     };
 
-    state.repo.put_member(&state.members_table, &member).await?;
-
-    if count_delta > 0 {
-        state
-            .repo
-            .update_member_count(&state.groups_table, &group_id, count_delta)
-            .await?;
-    }
+    state
+        .publish_sqs_event(&GroupEvent::JoinGroup {
+            member,
+            group_id,
+            count_delta,
+        })
+        .await?;
 
     Ok((StatusCode::CREATED, Json(json!({"message": msg}))))
 }
@@ -70,23 +111,28 @@ pub async fn leave_group(
         .await?;
 
     if matches!(&member.role, &Owner) {
-        return Err(AppError::BadRequest(
-            "Group owner cannot leave the group. Please transfer ownership or delete the group."
-                .to_string(),
-        ));
+        let owner_count = state
+            .repo
+            .query_owner_count(&state.groups_table, &group_id)
+            .await?;
+
+        if owner_count <= 1 {
+            return Err(AppError::BadRequest(
+                "Group owner cannot leave the group. Please transfer ownership or delete the group."
+                    .to_string(),
+            ));
+        }
     }
+
+    let was_active = matches!(&member.status, &Active);
 
     state
-        .repo
-        .delete_member(&state.members_table, &group_id, user_id)
+        .publish_sqs_event(&GroupEvent::LeaveGroup {
+            group_id,
+            user_id: user_id.to_owned(),
+            was_active,
+        })
         .await?;
-
-    if matches!(&member.status, &Active) {
-        state
-            .repo
-            .update_member_count(&state.groups_table, &group_id, -1)
-            .await?;
-    }
 
     Ok((
         StatusCode::OK,
@@ -104,6 +150,7 @@ pub async fn list_members(
         .repo
         .get_member(&state.members_table, &group_id, &claims.sub)
         .await?;
+
     if matches!(requester.status, Pending) {
         return Err(AppError::Forbidden);
     }
@@ -129,6 +176,7 @@ pub async fn approve_member(
         .repo
         .get_member(&state.members_table, &group_id, &claims.sub)
         .await?;
+
     if !matches!(requester.role, Owner) {
         return Err(AppError::Forbidden);
     }
@@ -137,10 +185,11 @@ pub async fn approve_member(
         .repo
         .approve_member_status(&state.members_table, &group_id, &user_id)
         .await?;
+
     state
-        .repo
-        .update_member_count(&state.groups_table, &group_id, 1)
+        .publish_sqs_event(&GroupEvent::ApproveMember { group_id })
         .await?;
+
     Ok((
         StatusCode::OK,
         Json(json!({"message": "Member approved successfully."})),
@@ -158,7 +207,7 @@ pub async fn remove_member(
         .get_member(&state.members_table, &group_id, &claims.sub)
         .await?;
 
-    if !matches!(requester.role, Owner) && claims.sub != user_id {
+    if !matches!(requester.role, Owner) {
         return Err(AppError::Forbidden);
     }
 
@@ -174,20 +223,50 @@ pub async fn remove_member(
         ));
     }
 
-    state
-        .repo
-        .delete_member(&state.members_table, &group_id, &user_id)
-        .await?;
+    let was_active = matches!(&target.status, &Active);
 
-    if matches!(&target.status, &Active) {
-        state
-            .repo
-            .update_member_count(&state.groups_table, &group_id, -1)
-            .await?;
-    }
+    state
+        .publish_sqs_event(&GroupEvent::RemoveMember {
+            group_id,
+            user_id: user_id.to_owned(),
+            was_active,
+        })
+        .await?;
 
     Ok((
         StatusCode::OK,
         Json(json!({"message": "Successfully removed the group." })),
+    ))
+}
+
+// POST /members/{group_id}/members/{user_id}/transfer-ownership
+pub async fn transfer_ownership(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path((group_id, user_id)): Path<(String, String)>,
+    Json(body): Json<TransferOwnershipQuery>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let requester = state
+        .repo
+        .get_member(&state.members_table, &group_id, &claims.sub)
+        .await?;
+
+    if !matches!(requester.role, Owner) {
+        return Err(AppError::Forbidden);
+    }
+
+    state
+        .repo
+        .transfer_ownership(
+            &state.groups_table,
+            &group_id,
+            &user_id,
+            &*body.new_owner_id,
+        )
+        .await?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({"message": "Ownership transferred successfully."})),
     ))
 }
