@@ -77,6 +77,7 @@ pub enum GroupEvent {
     JoinGroup {
         member: GroupMember,
         group_id: String,
+        owner_id: String,
         count_delta: i64,
     },
     LeaveGroup {

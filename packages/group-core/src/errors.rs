@@ -62,6 +62,10 @@ pub enum DynamoDBError {
 
     #[error("Precondition failed: {0}")]
     PreconditionFailed(String),
+
+    #[error("Missing attribute: {0}")]
+    MissingAttribute(String),
+
 }
 
 #[derive(Debug, Error)]

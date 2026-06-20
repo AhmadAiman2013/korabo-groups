@@ -48,27 +48,6 @@ impl GroupsRepository {
         Ok(())
     }
 
-    pub async fn get_group(
-        &self,
-        table: &str,
-        group_id: &str,
-    ) -> Result<StudyGroup, DynamoDBError> {
-        let resp = self
-            .client
-            .get_item()
-            .table_name(table)
-            .key("PK", group_pk(group_id))
-            .key("SK", metadata_sk())
-            .send()
-            .await
-            .map_err(|e| e.into_service_error())?;
-
-        let item = resp
-            .item
-            .ok_or_else(|| DynamoDBError::NotFound(group_id.to_string()))?;
-        from_item(item).map_err(|e| e.into())
-    }
-
     // Query by entity_type GS1, Return all groups
     pub async fn list_all_groups(
         &self,
@@ -410,4 +389,53 @@ impl GroupsRepository {
         }
         Ok(count)
     }
+
+    pub async fn get_group(
+        &self,
+        table: &str,
+        group_id: &str,
+    ) -> Result<StudyGroup, DynamoDBError> {
+        let resp = self
+            .client
+            .get_item()
+            .table_name(table)
+            .key("PK", group_pk(group_id))
+            .key("SK", metadata_sk())
+            .send()
+            .await
+            .map_err(|e| e.into_service_error())?;
+
+        let item = resp
+            .item
+            .ok_or_else(|| DynamoDBError::NotFound(group_id.to_string()))?;
+        from_item(item).map_err(|e| e.into())
+    }
+    
+    
+    // // Get group's owner
+    // pub async fn get_group_owner_id(
+    //     &self,
+    //     table: &str,
+    //     group_id: &str,
+    // ) -> Result<String, DynamoDBError> {
+    //     let resp = self
+    //         .client
+    //         .get_item()
+    //         .table_name(table)
+    //         .key("PK", group_pk(group_id))
+    //         .key("SK", metadata_sk())
+    //         .send()
+    //         .await
+    //         .map_err(|e| e.into_service_error())?;
+    //     
+    //     let item = resp.item.ok_or(DynamoDBError::NotFound)?;
+    //     
+    //     let owner_id = item
+    //         .get("owner_id")
+    //         .and_then(|v| v.as_s().ok())
+    //         .ok_or(DynamoDBError::MissingAttribute("owner_id".to_string()))?
+    //         .to_string();
+    //     
+    //     Ok(owner_id)
+    // }
 }

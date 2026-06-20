@@ -4,10 +4,15 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use chrono::Utc;
 use group_core::RoleType::{Member, Owner};
-use group_core::SqsError;
 use group_core::StatusType::{Active, Pending};
 use group_core::{
-    AppError, AppState as baseAppState, GroupEvent, GroupMember, GroupType, TransferOwnershipQuery,
+    AppError,
+    AppState as baseAppState,
+    GroupEvent,
+    GroupMember,
+    GroupType,
+    TransferOwnershipQuery,
+    publish_sqs_event,
 };
 use jwt::AuthClaims;
 use jwt::JwtPublicKey;
@@ -35,21 +40,6 @@ impl AsRef<JwtPublicKey> for AppState {
     }
 }
 
-impl AppState {
-    async fn publish_sqs_event(&self, event: &GroupEvent) -> Result<(), AppError> {
-        let body = serde_json::to_string(event)?;
-
-        self.sqs
-            .send_message()
-            .queue_url(&self.queue_url)
-            .message_body(body)
-            .send()
-            .await
-            .map_err(SqsError::SendMessageError)?;
-        Ok(())
-    }
-}
-
 // POST /members/{group_id}/join
 pub async fn join_group(
     State(state): State<AppState>,
@@ -57,6 +47,7 @@ pub async fn join_group(
     Path(group_id): Path<String>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let group = state.repo.get_group(&state.groups_table, &group_id).await?;
+    let owner_id = group.owner_id;
     let user_id = &claims.sub;
 
     if state
@@ -87,13 +78,7 @@ pub async fn join_group(
         joined_at: Utc::now().to_rfc3339(),
     };
 
-    state
-        .publish_sqs_event(&GroupEvent::JoinGroup {
-            member,
-            group_id,
-            count_delta,
-        })
-        .await?;
+    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::JoinGroup { member, group_id, owner_id, count_delta }).await?;
 
     Ok((StatusCode::CREATED, Json(json!({"message": msg}))))
 }
@@ -126,13 +111,7 @@ pub async fn leave_group(
 
     let was_active = matches!(&member.status, &Active);
 
-    state
-        .publish_sqs_event(&GroupEvent::LeaveGroup {
-            group_id,
-            user_id: user_id.to_owned(),
-            was_active,
-        })
-        .await?;
+    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::LeaveGroup { group_id, user_id: user_id.to_owned(), was_active }).await?;
 
     Ok((
         StatusCode::OK,
@@ -155,14 +134,23 @@ pub async fn list_members(
         return Err(AppError::Forbidden);
     }
 
-    let members = state
+    let raw_members = state
         .repo
         .list_group_members(&state.members_table, &group_id)
         .await?;
+
+    let is_owner = matches!(requester.role, Owner);
+
+    // filter out pending if not owner
+    let members: Vec<GroupMember> = raw_members
+        .into_iter()
+        .filter(|member| is_owner || matches!(member.status, Active))
+        .collect();
+
     let count = members.len();
     Ok((
         StatusCode::OK,
-        Json(json!({ "members": members, "count": count })),
+        Json(json!({ "members": members, "count": count, "is_owner": is_owner })),
     ))
 }
 
@@ -186,9 +174,7 @@ pub async fn approve_member(
         .approve_member_status(&state.members_table, &group_id, &user_id)
         .await?;
 
-    state
-        .publish_sqs_event(&GroupEvent::ApproveMember { group_id })
-        .await?;
+    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::ApproveMember { group_id }).await?;
 
     Ok((
         StatusCode::OK,
@@ -225,13 +211,7 @@ pub async fn remove_member(
 
     let was_active = matches!(&target.status, &Active);
 
-    state
-        .publish_sqs_event(&GroupEvent::RemoveMember {
-            group_id,
-            user_id: user_id.to_owned(),
-            was_active,
-        })
-        .await?;
+    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::RemoveMember { group_id, user_id: user_id.to_owned(), was_active }).await?;
 
     Ok((
         StatusCode::OK,

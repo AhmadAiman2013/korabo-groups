@@ -1,15 +1,21 @@
 use aws_lambda_events::sqs::SqsEvent;
-use group_core::{DynamoDBError, GroupEvent, GroupsRepository};
+use aws_sdk_sqs::Client;
+use chrono::Utc;
+use group_core::{publish_sqs_noti_event, DynamoDBError, GroupEvent, GroupsRepository};
 use lambda_runtime::tracing::error;
 use lambda_runtime::{Error, LambdaEvent};
 use serde_json::from_str;
 use std::sync::Arc;
+use uuid::Uuid;
+use ws_core::types::{NotificationTargeting, SqsNotificationEvent};
 
 #[derive(Clone)]
 pub struct AppState {
     pub repo: Arc<GroupsRepository>,
     pub groups_table: String,
     pub members_table: String,
+    pub queue_url: String,
+    pub sqs: Client,
 }
 
 pub async fn function_handler(event: LambdaEvent<SqsEvent>, state: AppState) -> Result<(), Error> {
@@ -49,15 +55,40 @@ async fn process_event(state: &AppState, msg: GroupEvent) -> Result<(), DynamoDB
         GroupEvent::JoinGroup {
             member,
             group_id,
+            owner_id,
             count_delta,
         } => {
             state.repo.put_member(&state.members_table, &member).await?;
-            if count_delta > 0 {
-                state
-                    .repo
-                    .update_member_count(&state.groups_table, &group_id, count_delta)
-                    .await?;
+            match count_delta {
+                1 => {
+                    state
+                        .repo
+                        .update_member_count(&state.groups_table, &group_id, count_delta)
+                        .await?;
+                }
+                0 => {
+                    let event = SqsNotificationEvent {
+                        event_id: Uuid::new_v4().to_string(),
+                        event_type: "JoinGroup".to_string(),
+                        actor_id: member.user_id,
+                        targeting: NotificationTargeting {
+                            user_ids: vec![owner_id],
+                            group_id: Some(group_id),
+                            exclude_user_ids: None,
+                        },
+                        payload: serde_json::to_value("").unwrap(),
+                        created_at: Utc::now().to_rfc3339(),
+                    };
+
+                    if let Err(e) =
+                        publish_sqs_noti_event(&state.sqs, &state.queue_url, &event).await
+                    {
+                        error!("Failed to publish SQS notification event: {}", e)
+                    }
+                }
+                _ => {}
             }
+
             Ok(())
         }
         GroupEvent::LeaveGroup {

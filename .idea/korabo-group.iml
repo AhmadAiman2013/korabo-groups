@@ -5,6 +5,7 @@
       <sourceFolder url="file://$MODULE_DIR$/packages/group-core/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/packages/korabo-group-handler/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/packages/korabo-group-members-handler/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/packages/korabo-group-worker/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
