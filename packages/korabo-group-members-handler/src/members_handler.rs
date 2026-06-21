@@ -241,7 +241,7 @@ pub async fn remove_member(
 
     Ok((
         StatusCode::OK,
-        Json(json!({"message": "Successfully removed the group." })),
+        Json(json!({"message": format!("Successfully removed {} from group.", user_id) })),
     ))
 }
 
