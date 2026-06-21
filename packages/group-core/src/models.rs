@@ -92,6 +92,7 @@ pub enum GroupEvent {
     },
     RemoveMember {
         group_id: String,
+        owner_id: String,
         user_id: String,
         was_active: bool,
     },

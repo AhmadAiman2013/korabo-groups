@@ -6,12 +6,7 @@ use chrono::Utc;
 use group_core::RoleType::{Member, Owner};
 use group_core::StatusType::{Active, Pending};
 use group_core::{
-    AppError,
-    AppState as baseAppState,
-    GroupEvent,
-    GroupMember,
-    GroupType,
-    TransferOwnershipQuery,
+    AppError, AppState as baseAppState, GroupEvent, GroupMember, GroupType, TransferOwnershipQuery,
     publish_sqs_event,
 };
 use jwt::AuthClaims;
@@ -78,7 +73,17 @@ pub async fn join_group(
         joined_at: Utc::now().to_rfc3339(),
     };
 
-    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::JoinGroup { member, group_id, owner_id, count_delta }).await?;
+    publish_sqs_event(
+        &state.sqs,
+        &state.queue_url,
+        &GroupEvent::JoinGroup {
+            member,
+            group_id,
+            owner_id,
+            count_delta,
+        },
+    )
+    .await?;
 
     Ok((StatusCode::CREATED, Json(json!({"message": msg}))))
 }
@@ -96,22 +101,24 @@ pub async fn leave_group(
         .await?;
 
     if matches!(&member.role, &Owner) {
-        let owner_count = state
-            .repo
-            .query_owner_count(&state.groups_table, &group_id)
-            .await?;
-
-        if owner_count <= 1 {
-            return Err(AppError::BadRequest(
-                "Group owner cannot leave the group. Please transfer ownership or delete the group."
-                    .to_string(),
-            ));
-        }
+        return Err(AppError::BadRequest(
+            "Group owner cannot leave the group. Please transfer ownership or delete the group."
+                .to_string(),
+        ));
     }
 
     let was_active = matches!(&member.status, &Active);
 
-    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::LeaveGroup { group_id, user_id: user_id.to_owned(), was_active }).await?;
+    publish_sqs_event(
+        &state.sqs,
+        &state.queue_url,
+        &GroupEvent::LeaveGroup {
+            group_id,
+            user_id: user_id.to_owned(),
+            was_active,
+        },
+    )
+    .await?;
 
     Ok((
         StatusCode::OK,
@@ -174,7 +181,16 @@ pub async fn approve_member(
         .approve_member_status(&state.members_table, &group_id, &user_id)
         .await?;
 
-    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::ApproveMember { group_id, user_id, owner_id: requester.user_id }).await?;
+    publish_sqs_event(
+        &state.sqs,
+        &state.queue_url,
+        &GroupEvent::ApproveMember {
+            group_id,
+            user_id,
+            owner_id: requester.user_id,
+        },
+    )
+    .await?;
 
     Ok((
         StatusCode::OK,
@@ -211,7 +227,17 @@ pub async fn remove_member(
 
     let was_active = matches!(&target.status, &Active);
 
-    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::RemoveMember { group_id, user_id: user_id.to_owned(), was_active }).await?;
+    publish_sqs_event(
+        &state.sqs,
+        &state.queue_url,
+        &GroupEvent::RemoveMember {
+            group_id,
+            owner_id: requester.user_id,
+            user_id: user_id.to_owned(),
+            was_active,
+        },
+    )
+    .await?;
 
     Ok((
         StatusCode::OK,

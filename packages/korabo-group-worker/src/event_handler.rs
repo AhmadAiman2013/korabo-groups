@@ -106,6 +106,28 @@ async fn process_event(state: &AppState, msg: GroupEvent) -> Result<(), DynamoDB
                     .update_member_count(&state.groups_table, &group_id, -1)
                     .await?;
             }
+            
+            let group = state.repo.get_group(&state.groups_table, &group_id).await?;
+
+            let event = SqsNotificationEvent {
+                event_id: Uuid::new_v4().to_string(),
+                event_type: "LeaveGroup".to_string(),
+                actor_id: user_id,
+                targeting: NotificationTargeting {
+                    user_ids: vec![group.owner_id],
+                    group_id: Some(group_id),
+                    exclude_user_ids: None,
+                },
+                payload: serde_json::to_value("").unwrap(),
+                created_at: Utc::now().to_rfc3339(),
+            };
+
+            if let Err(e) =
+                publish_sqs_noti_event(&state.sqs, &state.queue_url, &event).await
+            {
+                error!("Failed to publish SQS notification event: {}", e)
+            }
+            
             Ok(())
         }
         GroupEvent::ApproveMember {
@@ -139,6 +161,7 @@ async fn process_event(state: &AppState, msg: GroupEvent) -> Result<(), DynamoDB
         }
         GroupEvent::RemoveMember {
             group_id,
+            owner_id,
             user_id,
             was_active,
         } => {
@@ -151,6 +174,23 @@ async fn process_event(state: &AppState, msg: GroupEvent) -> Result<(), DynamoDB
                     .repo
                     .update_member_count(&state.groups_table, &group_id, -1)
                     .await?;
+            }
+
+            let event = SqsNotificationEvent {
+                event_id: Uuid::new_v4().to_string(),
+                event_type: "RemoveMember".to_string(),
+                actor_id: owner_id.to_string(),
+                targeting: NotificationTargeting {
+                    user_ids: vec![user_id],
+                    group_id: Some(group_id),
+                    exclude_user_ids: None,
+                },
+                payload: serde_json::to_value("").unwrap(),
+                created_at: Utc::now().to_rfc3339(),
+            };
+
+            if let Err(e) = publish_sqs_noti_event(&state.sqs, &state.queue_url, &event).await {
+                error!("Failed to publish SQS notification event: {}", e)
             }
             Ok(())
         }
