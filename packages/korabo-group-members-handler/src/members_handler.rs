@@ -174,11 +174,11 @@ pub async fn approve_member(
         .approve_member_status(&state.members_table, &group_id, &user_id)
         .await?;
 
-    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::ApproveMember { group_id }).await?;
+    publish_sqs_event(&state.sqs, &state.queue_url, &GroupEvent::ApproveMember { group_id, user_id, owner_id: requester.user_id }).await?;
 
     Ok((
         StatusCode::OK,
-        Json(json!({"message": "Member approved successfully."})),
+        Json(json!({"message": "Member approval is being processed"})),
     ))
 }
 

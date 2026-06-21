@@ -87,6 +87,8 @@ pub enum GroupEvent {
     },
     ApproveMember {
         group_id: String,
+        user_id: String,
+        owner_id: String,
     },
     RemoveMember {
         group_id: String,

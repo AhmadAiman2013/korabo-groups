@@ -108,11 +108,33 @@ async fn process_event(state: &AppState, msg: GroupEvent) -> Result<(), DynamoDB
             }
             Ok(())
         }
-        GroupEvent::ApproveMember { group_id } => {
+        GroupEvent::ApproveMember {
+            group_id,
+            user_id,
+            owner_id,
+        } => {
             state
                 .repo
                 .update_member_count(&state.groups_table, &group_id, 1)
                 .await?;
+
+            let event = SqsNotificationEvent {
+                event_id: Uuid::new_v4().to_string(),
+                event_type: "ApproveMember".to_string(),
+                actor_id: owner_id.to_string(),
+                targeting: NotificationTargeting {
+                    user_ids: vec![owner_id, user_id],
+                    group_id: Some(group_id),
+                    exclude_user_ids: None,
+                },
+                payload: serde_json::to_value("").unwrap(),
+                created_at: Utc::now().to_rfc3339(),
+            };
+
+            if let Err(e) = publish_sqs_noti_event(&state.sqs, &state.queue_url, &event).await {
+                error!("Failed to publish SQS notification event: {}", e)
+            }
+
             Ok(())
         }
         GroupEvent::RemoveMember {
