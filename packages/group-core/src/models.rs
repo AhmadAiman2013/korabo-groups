@@ -37,7 +37,6 @@ pub struct StudyGroup {
     pub created_at: String,
 }
 
-// git tag
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GroupMember {
     pub group_id: String,
