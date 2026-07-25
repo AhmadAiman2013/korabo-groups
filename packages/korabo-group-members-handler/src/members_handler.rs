@@ -279,13 +279,9 @@ pub async fn transfer_ownership(
     Path((group_id, user_id)): Path<(String, String)>,
     Json(body): Json<TransferOwnershipQuery>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    // The path segment must represent the caller themselves (self-transfer-out semantics).
-    // Reject early and clearly if the client sent someone else's id here — don't silently
-    // use the wrong value for to write.
-
     eprintln!(
-        "TRANSFER_DEBUG group_id={} path_user_id={} claims_sub={} new_owner_id={}",
-        group_id, user_id, claims.sub, body.new_owner_id
+        "TRANSFER_DEBUG group_id={:?} path_user_id={:?} claims_sub={:?} claims_sub_len={} new_owner_id={:?}",
+        group_id, user_id, claims.sub, claims.sub.len(), body.new_owner_id
     );
 
     if user_id != claims.sub {

@@ -340,6 +340,22 @@ impl GroupsRepository {
         current_owner_id: &str,
         new_owner_id: &str,
     ) -> Result<(), DynamoDBError> {
+        // TEMP DEBUG — remove after diagnosing
+        if let Ok(existing) = self.client
+            .get_item()
+            .table_name(table)
+            .key("PK", group_pk(group_id))
+            .key("SK", metadata_sk())
+            .send()
+            .await
+        {
+            if let Some(item) = existing.item() {
+                if let Some(owner_attr) = item.get("owner_id") {
+                    eprintln!("TRANSFER_DEBUG_DB owner_id_raw={:?}", owner_attr);
+                }
+            }
+        }
+
         self.client
             .update_item()
             .table_name(table)
