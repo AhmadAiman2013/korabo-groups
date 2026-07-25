@@ -5,10 +5,10 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use group_core::RoleType::{Member, Owner};
 use group_core::StatusType::{Active, Pending};
-use group_core::GroupType::Private;
+use group_core::GroupType::{Private, Public};
 use group_core::{
-    AppError, AppState as baseAppState, GroupEvent, GroupMember, GroupType, TransferOwnershipQuery,
-    publish_sqs_event,
+    AppError, AppState as baseAppState, DynamoDBError, GroupEvent, GroupMember,
+    TransferOwnershipQuery, publish_sqs_event,
 };
 use jwt::AuthClaims;
 use jwt::JwtPublicKey;
@@ -58,8 +58,8 @@ pub async fn join_group(
     }
 
     let (status, count_delta, msg) = match group.group_type {
-        GroupType::Public => (Active, 1, "Successfully joined the group."),
-        GroupType::Private => (
+        Public => (Active, 1, "Successfully joined the group."),
+        Private => (
             Pending,
             0,
             "Your request to join the group is pending approval.",
@@ -135,21 +135,35 @@ pub async fn list_members(
 ) -> Result<(StatusCode, Json<Value>), AppError> {
     let group = state.repo.get_group(&state.groups_table, &group_id).await?;
 
-    let requester = state
+    // Try to load the requester membership. If it's not found treat as None (not a member).
+    // Any other repository error should be propagated.
+    let requester_opt = match state
         .repo
         .get_member(&state.members_table, &group_id, &claims.sub)
-        .await?;
+        .await
+    {
+        Ok(m) => Some(m),
+        Err(e) => match e {
+            DynamoDBError::NotFound(_) => None,
+            _ => return Err(e.into()),
+        },
+    };
 
+    let is_owner = requester_opt.as_ref().map(|r| matches!(r.role, Owner)).unwrap_or(false);
+
+    // Access rules for private groups: non-members cannot list members. Pending members
+    // are not allowed to list other members either (only owner/active members may).
     if matches!(group.group_type, Private) {
-        return Err(AppError::Forbidden);
+        let req = requester_opt.as_ref().ok_or(AppError::Forbidden)?;
+        if matches!(req.status, Pending) && !is_owner {
+            return Err(AppError::Forbidden);
+        }
     }
 
     let raw_members = state
         .repo
         .list_group_members(&state.members_table, &group_id)
         .await?;
-
-    let is_owner = matches!(requester.role, Owner);
 
     // filter out pending if not owner
     let members: Vec<GroupMember> = raw_members
