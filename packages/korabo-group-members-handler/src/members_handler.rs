@@ -300,7 +300,7 @@ pub async fn transfer_ownership(
         .transfer_ownership(
             &state.groups_table,
             &group_id,
-            &claims.sub, // always the authenticated caller, never the path value
+            &claims.sub,
             &*body.new_owner_id,
         )
         .await?;

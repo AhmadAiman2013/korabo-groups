@@ -15,7 +15,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use lambda_http::tracing::error;
-use serde_dynamo::Error;
+use serde_dynamo::Error as SerDeDynError;
 use serde_json::json;
 use thiserror::Error;
 
@@ -49,7 +49,7 @@ pub enum DynamoDBError {
     DeleteError(#[from] DeleteItemError),
 
     #[error("Serialization error: {0}")]
-    Serialization(#[from] Error),
+    Serialization(#[from] SerDeDynError),
 
     #[error("Build error: {0}")]
     BuildError(String),
