@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use chrono::Utc;
 use group_core::RoleType::{Member, Owner};
 use group_core::StatusType::{Active, Pending};
+use group_core::GroupType::Private;
 use group_core::{
     AppError, AppState as baseAppState, GroupEvent, GroupMember, GroupType, TransferOwnershipQuery,
     publish_sqs_event,
@@ -132,12 +133,14 @@ pub async fn list_members(
     AuthClaims(claims): AuthClaims,
     Path(group_id): Path<String>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
+    let group = state.repo.get_group(&state.groups_table, &group_id).await?;
+
     let requester = state
         .repo
         .get_member(&state.members_table, &group_id, &claims.sub)
         .await?;
 
-    if matches!(requester.status, Pending) {
+    if matches!(group.group_type, Private) {
         return Err(AppError::Forbidden);
     }
 
