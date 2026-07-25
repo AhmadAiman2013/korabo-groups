@@ -279,6 +279,13 @@ pub async fn transfer_ownership(
     Path((group_id, user_id)): Path<(String, String)>,
     Json(body): Json<TransferOwnershipQuery>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
+    // The path segment must represent the caller themselves (self-transfer-out semantics).
+    // Reject early and clearly if the client sent someone else's id here — don't silently
+    // use the wrong value for to write.
+    if user_id != claims.sub {
+        return Err(AppError::Forbidden);
+    }
+
     let requester = state
         .repo
         .get_member(&state.members_table, &group_id, &claims.sub)
@@ -293,7 +300,7 @@ pub async fn transfer_ownership(
         .transfer_ownership(
             &state.groups_table,
             &group_id,
-            &user_id,
+            &claims.sub, // always the authenticated caller, never the path value
             &*body.new_owner_id,
         )
         .await?;
