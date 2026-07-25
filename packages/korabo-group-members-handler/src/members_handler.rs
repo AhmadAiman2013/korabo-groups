@@ -279,11 +279,6 @@ pub async fn transfer_ownership(
     Path((group_id, user_id)): Path<(String, String)>,
     Json(body): Json<TransferOwnershipQuery>,
 ) -> Result<(StatusCode, Json<Value>), AppError> {
-    eprintln!(
-        "TRANSFER_DEBUG group_id={:?} path_user_id={:?} claims_sub={:?} claims_sub_len={} new_owner_id={:?}",
-        group_id, user_id, claims.sub, claims.sub.len(), body.new_owner_id
-    );
-
     if user_id != claims.sub {
         return Err(AppError::Forbidden);
     }
@@ -301,6 +296,7 @@ pub async fn transfer_ownership(
         .repo
         .transfer_ownership(
             &state.groups_table,
+            &state.members_table,
             &group_id,
             &claims.sub,
             &*body.new_owner_id,

@@ -4,6 +4,7 @@ use aws_sdk_dynamodb::operation::delete_item::DeleteItemError;
 use aws_sdk_dynamodb::operation::get_item::GetItemError;
 use aws_sdk_dynamodb::operation::put_item::PutItemError;
 use aws_sdk_dynamodb::operation::query::QueryError;
+use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsError;
 use aws_sdk_dynamodb::operation::update_item::UpdateItemError;
 use aws_sdk_sqs::error::SdkError as SQSSdkError;
 use aws_sdk_sqs::operation::send_message::SendMessageError;
@@ -66,6 +67,9 @@ pub enum DynamoDBError {
     #[error("Missing attribute: {0}")]
     MissingAttribute(String),
 
+    #[error("Transaction error: {0}")]
+    TransactWriteError(#[from] TransactWriteItemsError),
+
 }
 
 #[derive(Debug, Error)]
@@ -102,6 +106,13 @@ impl IntoResponse for AppError {
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
             AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            AppError::Repository(DynamoDBError::TransactWriteError(e)) => {
+                error!("Transaction cancelled: {:?}", e);
+                (
+                    StatusCode::CONFLICT,
+                    "Ownership state changed since you last loaded this page — please refresh and try again.".to_string(),
+                )
+            }
             AppError::Repository(DynamoDBError::NotFound(id)) => {
                 (StatusCode::NOT_FOUND, id.clone())
             }

@@ -2,10 +2,11 @@ use crate::{DynamoDBError, GroupMember, StudyGroup};
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::operation::put_item::PutItemError::ConditionalCheckFailedException as ConditionalCheckPutError;
 use aws_sdk_dynamodb::operation::update_item::UpdateItemError::ConditionalCheckFailedException as ConditionalCheckUpdateError;
-use aws_sdk_dynamodb::types::{AttributeValue, KeysAndAttributes};
+use aws_sdk_dynamodb::types::{AttributeValue, KeysAndAttributes, TransactWriteItem, Update};
 use serde_dynamo::aws_sdk_dynamodb_1::from_item;
 use serde_dynamo::to_item;
 use std::collections::HashMap;
+
 
 // helpers
 fn group_pk(group_id: &str) -> AttributeValue {
@@ -335,42 +336,57 @@ impl GroupsRepository {
 
     pub async fn transfer_ownership(
         &self,
-        table: &str,
+        groups_table: &str,
+        members_table: &str,
         group_id: &str,
         current_owner_id: &str,
         new_owner_id: &str,
     ) -> Result<(), DynamoDBError> {
-        // TEMP DEBUG — remove after diagnosing
-        if let Ok(existing) = self.client
-            .get_item()
-            .table_name(table)
-            .key("PK", group_pk(group_id))
-            .key("SK", metadata_sk())
-            .send()
-            .await
-        {
-            if let Some(item) = existing.item() {
-                if let Some(owner_attr) = item.get("owner_id") {
-                    eprintln!("TRANSFER_DEBUG_DB owner_id_raw={:?}", owner_attr);
-                }
-            }
-        }
-
-        self.client
-            .update_item()
-            .table_name(table)
+        let group_update = Update::builder()
+            .table_name(groups_table)
             .key("PK", group_pk(group_id))
             .key("SK", metadata_sk())
             .update_expression("SET owner_id = :new_owner")
             .condition_expression("owner_id = :current_owner")
             .expression_attribute_values(":new_owner", AttributeValue::S(new_owner_id.to_string()))
-            .expression_attribute_values(
-                ":current_owner",
-                AttributeValue::S(current_owner_id.to_string()),
-            )
+            .expression_attribute_values(":current_owner", AttributeValue::S(current_owner_id.to_string()))
+            .build()
+            .map_err(|e| DynamoDBError::BuildError(e.to_string()))?;
+
+        let demote_old_owner = Update::builder()
+            .table_name(members_table)
+            .key("PK", group_pk(group_id))
+            .key("SK", member_sk(current_owner_id))
+            .update_expression("SET #role = :member_role")
+            .condition_expression("#role = :owner_role")
+            .expression_attribute_names("#role", "role")
+            .expression_attribute_values(":member_role", AttributeValue::S("member".to_string()))
+            .expression_attribute_values(":owner_role", AttributeValue::S("owner".to_string()))
+            .build()
+            .map_err(|e| DynamoDBError::BuildError(e.to_string()))?;
+
+        let promote_new_owner = Update::builder()
+            .table_name(members_table)
+            .key("PK", group_pk(group_id))
+            .key("SK", member_sk(new_owner_id))
+            .update_expression("SET #role = :owner_role")
+            .condition_expression("attribute_exists(PK) AND #status = :active")
+            .expression_attribute_names("#role", "role")
+            .expression_attribute_names("#status", "status")
+            .expression_attribute_values(":owner_role", AttributeValue::S("owner".to_string()))
+            .expression_attribute_values(":active", AttributeValue::S("active".to_string()))
+            .build()
+            .map_err(|e| DynamoDBError::BuildError(e.to_string()))?;
+
+        self.client
+            .transact_write_items()
+            .transact_items(TransactWriteItem::builder().update(group_update).build())
+            .transact_items(TransactWriteItem::builder().update(demote_old_owner).build())
+            .transact_items(TransactWriteItem::builder().update(promote_new_owner).build())
             .send()
             .await
             .map_err(|e| e.into_service_error())?;
+
         Ok(())
     }
 
