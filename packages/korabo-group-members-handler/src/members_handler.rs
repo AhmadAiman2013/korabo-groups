@@ -36,6 +36,26 @@ impl AsRef<JwtPublicKey> for AppState {
     }
 }
 
+// Helper to load an optional membership for a user. Converts NotFound -> None,
+// and propagates other repository errors as AppError.
+async fn get_member_optional(
+    state: &AppState,
+    group_id: &str,
+    user_id: &str,
+) -> Result<Option<GroupMember>, AppError> {
+    match state
+        .repo
+        .get_member(&state.members_table, &group_id.to_string(), user_id)
+        .await
+    {
+        Ok(m) => Ok(Some(m)),
+        Err(e) => match e {
+            DynamoDBError::NotFound(_) => Ok(None),
+            _ => Err(e.into()),
+        },
+    }
+}
+
 // POST /members/{group_id}/join
 pub async fn join_group(
     State(state): State<AppState>,
@@ -137,17 +157,7 @@ pub async fn list_members(
 
     // Try to load the requester membership. If it's not found treat as None (not a member).
     // Any other repository error should be propagated.
-    let requester_opt = match state
-        .repo
-        .get_member(&state.members_table, &group_id, &claims.sub)
-        .await
-    {
-        Ok(m) => Some(m),
-        Err(e) => match e {
-            DynamoDBError::NotFound(_) => None,
-            _ => return Err(e.into()),
-        },
-    };
+    let requester_opt = get_member_optional(&state, &group_id, &claims.sub).await?;
 
     let is_owner = requester_opt.as_ref().map(|r| matches!(r.role, Owner)).unwrap_or(false);
 
@@ -292,4 +302,31 @@ pub async fn transfer_ownership(
         StatusCode::OK,
         Json(json!({"message": "Ownership transferred successfully."})),
     ))
+}
+
+pub async fn get_my_membership(
+    State(state): State<AppState>,
+    AuthClaims(claims): AuthClaims,
+    Path(group_id): Path<String>,
+) -> Result<(StatusCode, Json<Value>), AppError> {
+    let member = get_member_optional(&state, &group_id, &claims.sub).await?;
+
+    match member {
+        Some(m) => Ok((
+            StatusCode::OK,
+            Json(json!({
+                "is_member": true,
+                "role": m.role,
+                "status": m.status,
+            })),
+        )),
+        None => Ok((
+            StatusCode::OK,
+            Json(json!({
+                "is_member": false,
+                "role": Value::Null,
+                "status": Value::Null,
+            })),
+        )),
+    }
 }
